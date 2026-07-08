@@ -1,0 +1,33 @@
+# Build artifacts
+/aitinerary
+/dist/
+/bin/
+
+# Go
+*.test
+*.out
+coverage.txt
+coverage.out
+
+# Local caches & state
+/.cache/
+/tmp/
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Environment
+.env
+.env.local
+
+# Local, repo-relative config overrides — NEVER commit these; they may hold
+# tokens. (Lesson from jj-tui, which committed a live .jj-tui.json.) aitinerary
+# always resolves secrets via api_key_env / api_key_cmd, never from committed
+# config, but we ignore these patterns defensively from the first commit.
+.aitinerary*.json
+config.json
+ai.json
