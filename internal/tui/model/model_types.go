@@ -10,6 +10,7 @@ import (
 	"github.com/madicen/aitinerary/internal/actions"
 	"github.com/madicen/aitinerary/internal/aiconfig"
 	"github.com/madicen/aitinerary/internal/config"
+	"github.com/madicen/aitinerary/internal/jira"
 	"github.com/madicen/aitinerary/internal/store"
 	"github.com/madicen/aitinerary/internal/tui/commands"
 	"github.com/madicen/aitinerary/internal/tui/keys"
@@ -57,6 +58,9 @@ type Model struct {
 	demo bool
 
 	status statusBarState
+
+	jira        *jira.Client
+	autoApplied *actions.AutoApplied
 }
 
 func (m *Model) activeAIConfig() *aiconfig.Config {

@@ -69,7 +69,7 @@ func (m *Model) handleStatusBarMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd, bool
 	actions := []action{
 		{mouse.ZoneStatusHelp, m.openHelpOverlay()},
 		{mouse.ZoneStatusPalette, m.openCommandPalette()},
-		{mouse.ZoneStatusRefresh, m.store.RefreshCmd()},
+		{mouse.ZoneStatusRefresh, m.refreshAllCmd()},
 		{mouse.ZoneStatusQueue, nil},
 		{mouse.ZoneStatusUndo, m.undoCmd()},
 		{mouse.ZoneStatusQuit, tea.Quit},

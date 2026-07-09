@@ -42,7 +42,7 @@ func (m *Model) buildCommandRegistry() *commands.Registry {
 	})
 	r.Register(commands.Command{
 		ID: "app.refresh", Title: "Refresh ticket data", Category: "Global",
-		Binding: km.Refresh, Run: func() tea.Cmd { return m.store.RefreshCmd() },
+		Binding: km.Refresh, Run: func() tea.Cmd { return m.refreshAllCmd() },
 	})
 	r.Register(commands.Command{
 		ID: "app.undo", Title: "Undo last action", Category: "Global",
