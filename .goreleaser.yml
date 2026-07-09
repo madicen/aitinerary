@@ -1,0 +1,88 @@
+# yaml-language-server: $schema=https://goreleaser.com/static/schema.json
+version: 2
+
+project_name: aitinerary
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: aitinerary
+    main: ./cmd/aitinerary
+    binary: aitinerary
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w
+      - -X main.version={{ .Version }}
+
+archives:
+  - id: default
+    formats:
+      - tar.gz
+    name_template: >-
+      {{ .ProjectName }}_
+      {{- .Version }}_
+      {{- .Os }}_
+      {{- .Arch }}
+    format_overrides:
+      - goos: windows
+        formats:
+          - zip
+    files:
+      - README.md
+      - LICENSE*
+
+checksum:
+  name_template: 'checksums.txt'
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - '^docs:'
+      - '^test:'
+      - '^chore:'
+      - Merge pull request
+      - Merge branch
+
+homebrew_casks:
+  - name: aitinerary
+    repository:
+      owner: madicen
+      name: homebrew-tap
+      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+    homepage: "https://github.com/madicen/aitinerary"
+    description: "A BubbleTea TUI for Jira ticket hygiene"
+    license: "MIT"
+    binaries:
+      - aitinerary
+    # gh is the only hard runtime dep installable via brew; the Jira token and
+    # AI backend (Ollama / cloud) are configured at runtime.
+    dependencies:
+      - formula: gh
+    hooks:
+      post:
+        install: |
+          if OS.mac?
+            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/aitinerary"]
+          end
+
+release:
+  github:
+    owner: madicen
+    name: aitinerary
+  draft: false
+  prerelease: auto
+  name_template: "v{{ .Version }}"
