@@ -1,10 +1,4 @@
-// Command aitinerary is a TUI for Jira ticket hygiene: it detects tickets that
-// should already be Done from merged GitHub PRs, flags hygiene problems, builds
-// retroactive epics, and runs a sync-prep sweep before weekly syncs.
-//
-// This is the P0 scaffold entry point. The interactive TUI is wired in during
-// phase P2; until then the binary supports --version and a --help banner so
-// the build is verifiable end to end.
+// Command aitinerary is a TUI for Jira ticket hygiene.
 package main
 
 import (
@@ -12,19 +6,32 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
+	"strings"
+
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
+	"github.com/muesli/termenv"
+
+	"github.com/madicen/aitinerary/internal/aiconfig"
+	"github.com/madicen/aitinerary/internal/applog"
+	"github.com/madicen/aitinerary/internal/config"
+	"github.com/madicen/aitinerary/internal/theme"
+	"github.com/madicen/aitinerary/internal/tui"
 )
 
-// version is the release identifier, overridden at build time via
-// -ldflags "-X main.version={{.Version}}" (see the Makefile / goreleaser).
-// Defaults to "dev" for local `go run` / `go build` invocations.
 var version = "dev"
+
+// runProgram is the tea program runner. Tests replace it with a no-op.
+var runProgram = func(m tea.Model, opts ...tea.ProgramOption) error {
+	_, err := tea.NewProgram(m, opts...).Run()
+	return err
+}
 
 func main() {
 	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))
 }
 
-// run parses flags and returns the process exit code. It is split out from
-// main so tests can drive it with explicit args and captured output.
 func run(args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("aitinerary", flag.ContinueOnError)
 	fs.SetOutput(stderr)
@@ -49,12 +56,74 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return 0
 	}
 
-	// The interactive TUI is wired in phase P2. Until then, print a banner so
-	// the scaffold binary is runnable and self-describing.
-	fmt.Fprintf(stdout, "aitinerary %s\n", version)
-	fmt.Fprintln(stdout, "TUI not yet wired (phase P2). Run with --version for the build id.")
-	if demo {
-		fmt.Fprintln(stdout, "(demo mode requested)")
+	if err := runTUI(demo); err != nil {
+		fmt.Fprintf(stderr, "aitinerary: %v\n", err)
+		return 1
 	}
 	return 0
+}
+
+func runTUI(demoMode bool) error {
+	if err := applog.Init(version); err != nil {
+		fmt.Fprintf(os.Stderr, "aitinerary: logging disabled: %v\n", err)
+	}
+
+	if demoMode {
+		if err := configureDemoEnv(); err != nil {
+			return fmt.Errorf("demo setup: %w", err)
+		}
+	}
+
+	cfg, err := config.Load("")
+	if err != nil {
+		return fmt.Errorf("config: %w", err)
+	}
+
+	aiCfg, err := aiconfig.Load()
+	if err != nil {
+		return fmt.Errorf("ai config: %w", err)
+	}
+
+	th := theme.FromConfig(cfg)
+	if saved, err := theme.Load(); err == nil && saved != nil {
+		th = saved
+	}
+	theme.Apply(th)
+	theme.SetupRendering(th)
+
+	defer tui.FlushMouse()
+
+	m := tui.New(tui.Options{
+		Config:   cfg,
+		Demo:     demoMode,
+		AIConfig: aiCfg,
+	})
+	return runProgram(m, tea.WithAltScreen(), tea.WithMouseCellMotion())
+}
+
+func configureDemoEnv() error {
+	lipgloss.SetColorProfile(termenv.TrueColor)
+
+	demoRoot := strings.TrimSpace(os.Getenv("AITINERARY_DEMO_DIR"))
+	if demoRoot == "" {
+		var err error
+		demoRoot, err = os.MkdirTemp("", "aitinerary-demo-")
+		if err != nil {
+			return fmt.Errorf("mkdir demo dir: %w", err)
+		}
+	}
+	cfgDir := filepath.Join(demoRoot, "config")
+	cacheDir := filepath.Join(demoRoot, "cache")
+	for _, d := range []string{cfgDir, cacheDir} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			return fmt.Errorf("mkdir %s: %w", d, err)
+		}
+	}
+	if err := os.Setenv("AITINERARY_CONFIG_DIR", cfgDir); err != nil {
+		return err
+	}
+	if err := os.Setenv("AITINERARY_CACHE_DIR", cacheDir); err != nil {
+		return err
+	}
+	return nil
 }

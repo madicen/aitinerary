@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"strings"
 	"testing"
+
+	tea "github.com/charmbracelet/bubbletea"
 )
 
 func TestRunVersion(t *testing.T) {
@@ -21,15 +23,19 @@ func TestRunVersion(t *testing.T) {
 	}
 }
 
-func TestRunBannerDefault(t *testing.T) {
+func TestRunDefaultLaunchesTUI(t *testing.T) {
 	version = "dev"
+	old := runProgram
+	runProgram = func(m tea.Model, opts ...tea.ProgramOption) error { return nil }
+	t.Cleanup(func() { runProgram = old })
+
 	var out, errBuf bytes.Buffer
 	code := run(nil, &out, &errBuf)
 	if code != 0 {
 		t.Fatalf("exit code = %d, want 0", code)
 	}
-	if !strings.Contains(out.String(), "aitinerary dev") {
-		t.Fatalf("banner missing version, got %q", out.String())
+	if errBuf.Len() != 0 {
+		t.Fatalf("stderr should be empty, got %q", errBuf.String())
 	}
 }
 
