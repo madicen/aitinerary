@@ -27,6 +27,7 @@ const (
 	KindSetStartDate Kind = "set_start_date"
 	KindAddComment  Kind = "add_comment"
 	KindCreateEpic  Kind = "create_epic"
+	KindCreateTicket Kind = "create_ticket"
 	KindSetLabels   Kind = "set_labels"
 	KindRank        Kind = "rank"
 )
@@ -63,8 +64,16 @@ type EpicPayload struct {
 	SetParentOn []string
 }
 
-// Action is one proposed or applied mutation. Only the payload fields relevant
-// to Kind are populated.
+// TicketPayload carries fields for KindCreateTicket (IRE quick-capture).
+type TicketPayload struct {
+	Project     string
+	IssueType   string
+	Summary     string
+	Description string
+	Labels      []string
+}
+
+// Action is one proposed or applied mutation.
 type Action struct {
 	ID         string     `json:"id"`
 	Kind       Kind       `json:"kind"`
@@ -83,7 +92,8 @@ type Action struct {
 	Labels       []string     `json:"labels,omitempty"`         // SetLabels add
 	RemoveLabels []string     `json:"remove_labels,omitempty"`  // SetLabels remove
 	RankBefore   string       `json:"rank_before,omitempty"`    // Rank
-	Epic         *EpicPayload `json:"epic,omitempty"`           // CreateEpic
+	Epic         *EpicPayload   `json:"epic,omitempty"`           // CreateEpic
+	Ticket       *TicketPayload `json:"ticket,omitempty"`         // CreateTicket
 
 	// PRRef is a "repo#number" back-reference for auto Transition→Done actions.
 	PRRef string `json:"pr_ref,omitempty"`
@@ -124,6 +134,11 @@ func (a Action) Describe() string {
 			return fmt.Sprintf("create epic %q in %s", a.Epic.Summary, a.Epic.Project)
 		}
 		return "create epic"
+	case KindCreateTicket:
+		if a.Ticket != nil {
+			return fmt.Sprintf("create %s in %s", a.Ticket.Summary, a.Ticket.Project)
+		}
+		return "create ticket"
 	case KindSetLabels:
 		return fmt.Sprintf("%s: labels +%s -%s", a.TicketKey, strings.Join(a.Labels, ","), strings.Join(a.RemoveLabels, ","))
 	case KindRank:

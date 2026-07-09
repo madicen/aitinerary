@@ -8,6 +8,7 @@ import (
 	"github.com/madicen/aitinerary/internal/demo"
 	"github.com/madicen/aitinerary/internal/jira"
 	"github.com/madicen/aitinerary/internal/store"
+	"github.com/madicen/aitinerary/internal/tui/keys"
 )
 
 type fakeLister struct {
@@ -70,20 +71,37 @@ func (f *fakeExecutor) AddComment(_ context.Context, _, _ string) error { return
 func (f *fakeExecutor) CreateEpic(_ context.Context, _ jira.EpicSpec) (string, error) {
 	return "APP-500", nil
 }
+func (f *fakeExecutor) CreateTicket(_ context.Context, _ jira.CreateIssueSpec) (string, error) {
+	return "APP-999", nil
+}
+func (f *fakeExecutor) RankIssues(_ context.Context, _ []string, _ string) error { return nil }
 func (f *fakeExecutor) ListTransitions(_ context.Context, _ string) ([]jira.Transition, error) {
 	return f.transitions, nil
 }
 
 func demoBoardModel(width, height int) *Model {
-	cfg := config.Default()
-	st := store.New(cfg, nil, true)
-	_ = st.RefreshCmd()()
 	fx := &fakeExecutor{
 		ticket: demo.Tickets()[0],
 		transitions: []jira.Transition{
 			{ID: "1", Name: "Done", ToStatus: "Done"},
 			{ID: "2", Name: "Review", ToStatus: "In Review"},
 		},
+	}
+	return demoBoardModelWithExecutor(width, height, fx)
+}
+
+func demoBoardModelWithExecutor(width, height int, fx *fakeExecutor) *Model {
+	cfg := config.Default()
+	st := store.New(cfg, nil, true)
+	_ = st.RefreshCmd()()
+	if fx == nil {
+		fx = &fakeExecutor{ticket: demo.Tickets()[0]}
+	}
+	if fx.transitions == nil {
+		fx.transitions = []jira.Transition{
+			{ID: "1", Name: "Done", ToStatus: "Done"},
+			{ID: "2", Name: "Review", ToStatus: "In Review"},
+		}
 	}
 	list := &fakeLister{
 		transitions: fx.transitions,
@@ -94,6 +112,7 @@ func demoBoardModel(width, height int) *Model {
 		Config:      cfg,
 		Store:       st,
 		Engine:      actions.NewEngine(fx, nil),
+		Keys:        keys.Default(),
 		MergedPRs:   demo.MergedPRs(),
 		Transitions: list,
 		Sprints:     list,

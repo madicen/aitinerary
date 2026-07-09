@@ -43,6 +43,10 @@ func (f *testExecutor) AddComment(_ context.Context, _, text string) error {
 func (f *testExecutor) CreateEpic(context.Context, jira.EpicSpec) (string, error) {
 	return "APP-500", nil
 }
+func (f *testExecutor) CreateTicket(context.Context, jira.CreateIssueSpec) (string, error) {
+	return "APP-999", nil
+}
+func (f *testExecutor) RankIssues(context.Context, []string, string) error { return nil }
 func (f *testExecutor) ListTransitions(context.Context, string) ([]jira.Transition, error) {
 	return nil, nil
 }

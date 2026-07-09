@@ -97,6 +97,20 @@ func (eng *Engine) execute(ctx context.Context, a Action) (string, error) {
 			RequireEpicName: a.Epic.RequireEpicName,
 		}
 		return eng.exec.CreateEpic(ctx, spec)
+	case KindCreateTicket:
+		if a.Ticket == nil {
+			return "", fmt.Errorf("create_ticket action missing ticket payload")
+		}
+		spec := jira.CreateIssueSpec{
+			Project:     a.Ticket.Project,
+			IssueType:   a.Ticket.IssueType,
+			Summary:     a.Ticket.Summary,
+			Description: a.Ticket.Description,
+			Labels:      a.Ticket.Labels,
+		}
+		return eng.exec.CreateTicket(ctx, spec)
+	case KindRank:
+		return "", eng.exec.RankIssues(ctx, []string{a.TicketKey}, a.RankBefore)
 	default:
 		return "", fmt.Errorf("unsupported action kind %q", a.Kind)
 	}

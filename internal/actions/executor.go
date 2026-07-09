@@ -20,6 +20,8 @@ type Executor interface {
 	SetLabels(ctx context.Context, key string, add, remove []string) error
 	AddComment(ctx context.Context, key, text string) error
 	CreateEpic(ctx context.Context, spec jira.EpicSpec) (string, error)
+	CreateTicket(ctx context.Context, spec jira.CreateIssueSpec) (string, error)
+	RankIssues(ctx context.Context, issues []string, rankBefore string) error
 
 	// ListTransitions backs undo: it lets the engine find a reverse transition
 	// to the prior status.
@@ -71,6 +73,14 @@ func (e *JiraExecutor) AddComment(ctx context.Context, key, text string) error {
 
 func (e *JiraExecutor) CreateEpic(ctx context.Context, spec jira.EpicSpec) (string, error) {
 	return e.C.CreateEpic(ctx, spec)
+}
+
+func (e *JiraExecutor) CreateTicket(ctx context.Context, spec jira.CreateIssueSpec) (string, error) {
+	return e.C.CreateIssue(ctx, spec)
+}
+
+func (e *JiraExecutor) RankIssues(ctx context.Context, issues []string, rankBefore string) error {
+	return e.C.RankIssues(ctx, issues, rankBefore)
 }
 
 func (e *JiraExecutor) ListTransitions(ctx context.Context, key string) ([]jira.Transition, error) {

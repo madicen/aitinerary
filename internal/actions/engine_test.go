@@ -64,6 +64,10 @@ func (f *fakeExecutor) CreateEpic(_ context.Context, spec jira.EpicSpec) (string
 	f.createdEpic = spec.Summary
 	return "APP-500", nil
 }
+func (f *fakeExecutor) CreateTicket(_ context.Context, _ jira.CreateIssueSpec) (string, error) {
+	return "APP-999", nil
+}
+func (f *fakeExecutor) RankIssues(_ context.Context, _ []string, _ string) error { return nil }
 func (f *fakeExecutor) ListTransitions(_ context.Context, _ string) ([]jira.Transition, error) {
 	return f.transitions, nil
 }
