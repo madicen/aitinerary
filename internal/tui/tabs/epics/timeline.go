@@ -27,7 +27,10 @@ func (m *Model) View() string {
 	title := styles.BoldStyle.Render("Epics")
 	list := m.renderList(w)
 	timeline := m.renderTimeline(w)
-	return lipgloss.JoinVertical(lipgloss.Left, title, "", list, "", timeline)
+	v := lipgloss.JoinVertical(lipgloss.Left, title, "", list, "", timeline)
+	v = m.renderDateEditOverlay(v)
+	v = m.renderAssignOverlay(v)
+	return v
 }
 
 func (m *Model) renderList(w int) string {

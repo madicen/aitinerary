@@ -7,9 +7,11 @@ import (
 	"time"
 
 	"github.com/charmbracelet/bubbles/key"
+	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	zone "github.com/lrstanley/bubblezone"
 
+	"github.com/madicen/aitinerary/internal/actions"
 	"github.com/madicen/aitinerary/internal/jira"
 	"github.com/madicen/aitinerary/internal/store"
 	"github.com/madicen/aitinerary/internal/tui/keys"
@@ -28,14 +30,18 @@ type EpicRow struct {
 
 // Opts configures the epics tab.
 type Opts struct {
-	Store *store.Store
-	Keys  keys.Map
-	Now   time.Time
+	Store  *store.Store
+	Queue  *actions.Queue
+	Engine *actions.Engine
+	Keys   keys.Map
+	Now    time.Time
 }
 
 // Model is the epics + timeline tab (P8.2/P8.3 basics).
 type Model struct {
 	store  *store.Store
+	queue  *actions.Queue
+	engine *actions.Engine
 	keys   keys.Map
 	zm     *zone.Manager
 	nav    listnav.Model
@@ -47,6 +53,11 @@ type Model struct {
 	selected    int
 	timelineOff int
 	now         time.Time
+
+	editMode     editMode
+	startInput   textinput.Model
+	dueInput     textinput.Model
+	assignOverlay *assignOverlayState
 }
 
 // New builds an epics tab model.
@@ -55,13 +66,17 @@ func New(o Opts) *Model {
 	if now.IsZero() {
 		now = time.Date(2026, 6, 15, 0, 0, 0, 0, time.UTC)
 	}
-	return &Model{
-		store: o.Store,
-		keys:  o.Keys,
-		zm:    zone.DefaultManager,
-		nav:   listnav.New(),
-		now:   now,
+	m := &Model{
+		store:  o.Store,
+		queue:  o.Queue,
+		engine: o.Engine,
+		keys:   o.Keys,
+		zm:     zone.DefaultManager,
+		nav:    listnav.New(),
+		now:    now,
 	}
+	m.initDateInputs()
+	return m
 }
 
 func (m *Model) Init() tea.Cmd { return nil }
@@ -134,7 +149,27 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.Resize(msg.Width, msg.Height)
 	case store.StoreRefreshedMsg:
 		m.rebuild()
+	case ActionAppliedMsg:
+		if msg.Err != nil {
+			return m, refreshStoreCmd(m.store)
+		}
+		m.closeEdits()
+		return m, refreshStoreCmd(m.store)
 	case tea.KeyMsg:
+		if m.assignOverlay != nil && m.assignOverlay.open {
+			return m.handleAssignOverlayKey(msg)
+		}
+		if m.editMode != editNone {
+			return m.handleDateEditKey(msg)
+		}
+		switch {
+		case key.Matches(msg, m.keys.EpicsEditStartDate):
+			return m.beginEditStartDate()
+		case key.Matches(msg, m.keys.EpicsEditDueDate):
+			return m.beginEditDueDate()
+		case key.Matches(msg, m.keys.EpicsAssign):
+			return m.openAssignOverlay()
+		}
 		switch msg.String() {
 		case "j", "down":
 			m.move(1)
@@ -146,6 +181,12 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.timelineOff++
 		}
 	case tea.MouseMsg:
+		if m.assignOverlay != nil && m.assignOverlay.open {
+			return m, nil
+		}
+		if m.editMode != editNone {
+			return m, nil
+		}
 		if m.nav.WheelScroll(msg) {
 			return m, nil
 		}
@@ -193,3 +234,8 @@ func (m *Model) SetNow(t time.Time) { m.now = t }
 
 // TimelineOffset exposes horizontal scroll for tests.
 func (m *Model) TimelineOffset() int { return m.timelineOff }
+
+// AssignOverlayOpen reports whether the assign picker is visible (tests).
+func (m *Model) AssignOverlayOpen() bool {
+	return m.assignOverlay != nil && m.assignOverlay.open
+}
