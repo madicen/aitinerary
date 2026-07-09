@@ -34,6 +34,10 @@ and undoable. Design rationale: [docs/DECISIONS.md](./docs/DECISIONS.md).
 |-------------------------|----------------|----------|
 | ![Board](./screenshots/board.gif) | ![Queue](./screenshots/queue.gif) | ![Settings](./screenshots/settings.gif) |
 
+| Epic builder | Sync-prep sweep |
+|--------------|-----------------|
+| ![Epic builder](./screenshots/epic-builder.gif) | ![Sync-prep](./screenshots/sync-prep.gif) |
+
 Regenerate with `make screenshots` (requires [VHS](https://github.com/charmbracelet/vhs)).
 
 ## Configuration
