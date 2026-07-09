@@ -12,8 +12,10 @@ import (
 	"github.com/madicen/aitinerary/internal/actions"
 	"github.com/madicen/aitinerary/internal/aiconfig"
 	"github.com/madicen/aitinerary/internal/config"
+	"github.com/madicen/aitinerary/internal/jira"
 	"github.com/madicen/aitinerary/internal/store"
 	"github.com/madicen/aitinerary/internal/tui/commands"
+	"github.com/madicen/aitinerary/internal/tui/data"
 	"github.com/madicen/aitinerary/internal/tui/keys"
 	"github.com/madicen/aitinerary/internal/tui/overlays"
 	"github.com/madicen/aitinerary/internal/tui/state"
@@ -44,12 +46,24 @@ func New(opts Options) *Model {
 
 	st := store.New(opts.Config, nil, opts.Demo)
 	q := actions.NewQueue()
-	eng := actions.NewEngine(actions.NewJiraExecutor(nil), nil)
+	autoApplied := actions.NewAutoApplied()
+	var eng *actions.Engine
+	var jiraClient *jira.Client
+	if svc, err := data.NewServices(opts.Config, opts.Demo); err == nil {
+		eng = svc.Engine
+		jiraClient = svc.Jira
+	} else if !opts.Demo {
+		eng = actions.NewEngine(actions.NewJiraExecutor(nil), nil)
+	} else {
+		eng = actions.NewEngine(nil, nil)
+	}
 	km := keys.Default()
 
 	boardTab := board.New(st, q, opts.Config, km)
 	boardTab.SetZoneManager(zone.DefaultManager)
 	boardTab.SetEngine(eng)
+	boardTab.SetAutoApplied(autoApplied)
+	boardTab.SetAIConfig(opts.AIConfig)
 
 	m := &Model{
 		opts:    opts,
@@ -63,6 +77,9 @@ func New(opts Options) *Model {
 		engine:  eng,
 		demo:    opts.Demo,
 		status:  statusBarState{workspace: "All"},
+
+		jira:        jiraClient,
+		autoApplied: autoApplied,
 	}
 	m.tabs[modeBoard] = NewTabAdapter(boardTab)
 	m.tabs[modeQueue] = NewTabAdapter(queue.New(queue.Opts{
@@ -72,7 +89,12 @@ func New(opts Options) *Model {
 		Store:  st,
 		Demo:   opts.Demo,
 	}))
-	m.tabs[modeEpics] = NewTabAdapter(epics.New(epics.Opts{Store: st, Keys: km}))
+	m.tabs[modeEpics] = NewTabAdapter(epics.New(epics.Opts{
+		Store:  st,
+		Keys:   km,
+		Queue:  q,
+		Engine: eng,
+	}))
 	m.tabs[modeSettings] = NewTabAdapter(settings.New(settings.Opts{
 		AppCfg: opts.Config,
 		AICfg:  opts.AIConfig,
@@ -101,7 +123,7 @@ func (m *Model) openSetupWizardCmd() tea.Cmd {
 func (m *Model) Init() tea.Cmd {
 	var cmds []tea.Cmd
 	cmds = append(cmds, m.spinner.Tick)
-	cmds = append(cmds, m.store.RefreshCmd())
+	cmds = append(cmds, m.refreshAllCmd())
 	for _, tab := range m.tabs {
 		if tab != nil {
 			cmds = append(cmds, tab.Init())
@@ -159,6 +181,28 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case state.NavigateMsg:
 		return m.handleNavigate(msg.Target)
+
+	case data.RefreshAllMsg:
+		var cmds []tea.Cmd
+		for tabMode, tab := range m.tabs {
+			if tab == nil {
+				continue
+			}
+			updated, cmd := tab.Update(msg)
+			m.tabs[tabMode] = updated
+			if cmd != nil {
+				cmds = append(cmds, cmd)
+			}
+		}
+		if msg.Store.Err != nil {
+			return m, tea.Batch(append(cmds, m.pushErrorOverlay(msg.Store.Err))...)
+		}
+		for _, err := range msg.AutoApplyErrors {
+			if err != nil {
+				cmds = append(cmds, m.pushErrorOverlay(err))
+			}
+		}
+		return m, tea.Batch(cmds...)
 
 	case store.StoreRefreshedMsg:
 		var cmds []tea.Cmd
@@ -233,7 +277,7 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, km.Palette):
 		return m, m.openCommandPalette()
 	case key.Matches(msg, km.Refresh):
-		return m, m.store.RefreshCmd()
+		return m, m.refreshAllCmd()
 	case key.Matches(msg, km.Undo):
 		return m, m.undoCmd()
 	case key.Matches(msg, km.Back):
@@ -241,6 +285,21 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, m.overlayStack.Update(msg)
 		}
 		return m, nil
+	}
+	// Settings subtabs own 1–4, e, j/k, etc.; only allow non-conflicting tab jumps.
+	if m.mode == modeSettings {
+		switch {
+		case key.Matches(msg, km.TabBoard):
+			return m.switchTab(modeBoard)
+		case key.Matches(msg, km.TabQueue):
+			return m.switchTab(modeQueue)
+		case key.Matches(msg, km.TabHelp):
+			return m.switchTab(modeHelp)
+		default:
+			return m, nil
+		}
+	}
+	switch {
 	case key.Matches(msg, km.TabBoard):
 		return m.switchTab(modeBoard)
 	case key.Matches(msg, km.TabQueue):

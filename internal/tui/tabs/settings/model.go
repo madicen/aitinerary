@@ -44,6 +44,7 @@ type Model struct {
 	demo       bool
 	subtab     Subtab
 	theme      *themePanel
+	aiProfiles *aiProfilesPanel
 	width      int
 	bodyHeight int
 	contentTop int
@@ -58,10 +59,11 @@ func New(o Opts) *Model {
 		o.AICfg = aiconfig.DefaultConfig()
 	}
 	return &Model{
-		appCfg: o.AppCfg,
-		aiCfg:  o.AICfg,
-		demo:   o.Demo,
-		theme:  newThemePanel(),
+		appCfg:     o.AppCfg,
+		aiCfg:      o.AICfg,
+		demo:       o.Demo,
+		theme:      newThemePanel(),
+		aiProfiles: newAIProfilesPanel(o.AICfg, o.Demo),
 	}
 }
 
@@ -69,6 +71,11 @@ func (m *Model) Init() tea.Cmd { return nil }
 
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch typed := msg.(type) {
+	case aiProfilesValidateMsg:
+		if m.aiProfiles != nil {
+			m.aiProfiles.setValidateResult(typed)
+		}
+		return m, nil
 	case bubblepicker.ColorChangedMsg:
 		if m.subtab == SubTheme && m.theme != nil {
 			m.theme.applyColor(typed.Color)
@@ -88,6 +95,18 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		return m, nil
+	}
+
+	if m.subtab == SubAIProfiles && m.aiProfiles != nil {
+		if m.aiProfiles.providerDD.Open() {
+			switch msg.(type) {
+			case tea.KeyMsg, tea.MouseMsg:
+				if cmd := m.aiProfiles.providerDD.Forward(msg); cmd != nil {
+					return m, cmd
+				}
+				return m, nil
+			}
+		}
 	}
 
 	if m.subtab == SubTheme && m.theme != nil {
@@ -118,6 +137,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.subtab = SubAIProfiles
 		case "4":
 			m.subtab = SubTheme
+		}
+		if m.subtab == SubAIProfiles && m.aiProfiles != nil {
+			return m, m.aiProfiles.updateKey(msg)
 		}
 		if m.subtab == SubTheme {
 			return m.updateThemeKey(msg)
@@ -161,6 +183,14 @@ func (m *Model) handleMouse(msg tea.MouseMsg) (tea.Cmd, bool) {
 			return nil, true
 		}
 	}
+	if m.subtab == SubAIProfiles && m.aiProfiles != nil {
+		if m.aiProfiles.providerDD.Open() {
+			if cmd := m.aiProfiles.providerDD.Forward(msg); cmd != nil {
+				return cmd, true
+			}
+			return nil, true
+		}
+	}
 	if m.subtab == SubTheme && m.theme != nil {
 		return m.theme.handleMouse(msg)
 	}
@@ -193,7 +223,13 @@ func (m *Model) View() string {
 	case SubJira:
 		b.WriteString(renderJira(m.appCfg))
 	case SubAIProfiles:
-		b.WriteString(renderAIProfiles(m.aiCfg))
+		if m.aiProfiles != nil {
+			panel := m.aiProfiles.render(m.width)
+			panel = m.aiProfiles.applyOverlays(panel, m.width, m.bodyHeight)
+			b.WriteString(panel)
+		} else {
+			b.WriteString(renderAIProfiles(m.aiCfg))
+		}
 	case SubTheme:
 		panel := m.theme.render(m.width)
 		panel = m.theme.applyOverlays(panel, m.width, m.bodyHeight)
@@ -225,4 +261,9 @@ func (m *Model) Resize(w, h int) {
 	m.bodyHeight = h
 }
 
-func (m *Model) SetContentOrigin(top int) { m.contentTop = top }
+func (m *Model) SetContentOrigin(top int) {
+	m.contentTop = top
+	if m.aiProfiles != nil {
+		m.aiProfiles.contentTop = top
+	}
+}
