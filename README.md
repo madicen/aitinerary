@@ -10,7 +10,8 @@ one-command sync-prep sweep before weekly syncs.
 
 ## Status
 
-Early development. See [PLAN.md](./PLAN.md) for the phased build plan.
+Early development — v0.1.0 target. See [PLAN.md](./PLAN.md) for the phased
+build plan and [docs/USAGE.md](./docs/USAGE.md) for day-to-day workflows.
 
 ## Highlights
 
@@ -25,7 +26,15 @@ Early development. See [PLAN.md](./PLAN.md) for the phased build plan.
 - **AI profiles** — local-first (Ollama) by default, switchable per-action.
 
 Nothing AI-authored reaches Jira unreviewed; every applied action is journaled
-and undoable.
+and undoable. Design rationale: [docs/DECISIONS.md](./docs/DECISIONS.md).
+
+## Screenshots
+
+| Board (needs attention) | Queue (review) | Settings |
+|-------------------------|----------------|----------|
+| ![Board](./screenshots/board.gif) | ![Queue](./screenshots/queue.gif) | ![Settings](./screenshots/settings.gif) |
+
+Regenerate with `make screenshots` (requires [VHS](https://github.com/charmbracelet/vhs)).
 
 ## Configuration
 
@@ -34,12 +43,15 @@ Config lives under `$AITINERARY_CONFIG_DIR` → `$XDG_CONFIG_HOME/aitinerary` �
 resolved from `JIRA_TOKEN` (or a `jira_token_cmd`), and AI provider keys via
 `api_key_env` / `api_key_cmd`.
 
+First-run setup wizard checks Jira, board discovery, `gh auth`, and Ollama.
+
 ## Build
 
 ```sh
 make build     # -> ./aitinerary
-make test      # unit tests
+make test      # unit tests (see docs/TESTING.md)
 make lint      # golangci-lint (must be installed)
+make demo      # fixture data, no live APIs
 ./aitinerary --version
 ```
 
