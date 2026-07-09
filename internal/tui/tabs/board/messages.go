@@ -7,8 +7,16 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/madicen/aitinerary/internal/actions"
 	"github.com/madicen/aitinerary/internal/jira"
+	"github.com/madicen/aitinerary/internal/prompts"
 	"github.com/madicen/aitinerary/internal/store"
 )
+
+// EpicDraftGeneratedMsg delivers an async epic draft regeneration result.
+type EpicDraftGeneratedMsg struct {
+	ReqID   int
+	Profile string
+	Draft   prompts.EpicDraftOutput
+}
 
 // SprintSelectedMsg is emitted when the sprint dropdown picks an option.
 type SprintSelectedMsg struct{ Index int }

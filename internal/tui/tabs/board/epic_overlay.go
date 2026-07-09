@@ -95,10 +95,20 @@ func (m *Model) handleEpicOverlayKey(msg tea.KeyMsg) (*Model, tea.Cmd) {
 	if e == nil || !e.open {
 		return m, nil
 	}
+	if m.genMenu.IsShown() {
+		if m.genMenu.Close() {
+			return m, nil
+		}
+	}
 	switch {
 	case key.Matches(msg, m.keys.Back):
 		m.epicOverlay = nil
+		m.genMenu.Reset()
 		return m, nil
+	case msg.String() == "g":
+		name := m.activeAIProfileName()
+		m.statusText = fmt.Sprintf("Regenerating epic draft (%s, one-shot)", name)
+		return m, m.regenerateEpicDraft(name)
 	case key.Matches(msg, m.keys.ListOpen):
 		return m, m.queueEpicActions()
 	case msg.String() == "tab":
@@ -182,6 +192,7 @@ func (m *Model) renderEpicOverlay(base string) string {
 		lines = append(lines, prefix+label+": "+inputs[i])
 	}
 	lines = append(lines, "")
+	lines = append(lines, m.markGenerateButton("g regenerate"))
 	lines = append(lines, styles.DimStyle.Render("tab field · enter queue · esc cancel"))
 	modal := overlays.ModalFrameSized(util.Clamp(m.width-8, 48, 90)).Render(strings.Join(lines, "\n"))
 	top := max(2, (m.height-lipgloss.Height(modal))/2)
