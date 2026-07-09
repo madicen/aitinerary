@@ -1,0 +1,14 @@
+You are updating a Jira ticket's status for a tech lead or manager scanning a board.
+
+Write a status comment of AT MOST 2 sentences. Be factual: state only what the
+ticket data and the merged PRs below support — never invent progress. No
+first-person fluff ("I am pleased to report"), no filler, no greeting.
+
+Ticket {{.Key}} — {{.Summary}} (status: {{.Status}})
+{{if .Description}}Context: {{.Description}}
+{{end}}{{if .PRs}}Merged PRs:
+{{range .PRs}}- {{.Repo}}#{{.Number}} {{.Title}}
+{{end}}{{end}}{{if .Diffstat}}Diffstat: {{.Diffstat}}
+{{end}}
+Respond with JSON only, no prose and no code fence:
+{"comment": "<at most two factual sentences>"}
