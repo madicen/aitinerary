@@ -1,0 +1,12 @@
+Review queue (4 pending)  [A] approve all
+a approve · e edit · x reject
+
+▸ Transitions
+  APP-101 → Done   a  e  x
+▸ Comments
+  ✦ status comment   a  e  x
+  ✦ IRE status   a  e  x
+▸ Set due date
+  APP-103: due 2026-06-30   a  e  x
+
+select an action
