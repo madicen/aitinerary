@@ -7,6 +7,7 @@ import (
 
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/glamour"
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/madicen/aitinerary/internal/actions"
@@ -110,8 +111,21 @@ func renderDescription(desc string, width int) string {
 	if width < 20 {
 		width = 20
 	}
-	// Glamour is optional; plain text fallback keeps tests hermetic.
-	return util.WrapForViewport(desc, width)
+	if theme.NoColor() {
+		return util.WrapForViewport(desc, width)
+	}
+	r, err := glamour.NewTermRenderer(
+		glamour.WithAutoStyle(),
+		glamour.WithWordWrap(width),
+	)
+	if err != nil {
+		return util.WrapForViewport(desc, width)
+	}
+	out, err := r.Render(desc)
+	if err != nil {
+		return util.WrapForViewport(desc, width)
+	}
+	return strings.TrimSpace(out)
 }
 
 func (m *Model) renderEditAffordances(t jira.Ticket) []string {
