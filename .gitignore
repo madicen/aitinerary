@@ -31,3 +31,8 @@ coverage.out
 .aitinerary*.json
 config.json
 ai.json
+
+# Sandbox / restore artifacts (not part of the repo)
+README.tmptest
+RESTORE-HISTORY.md
+aitinerary-history.bundle
