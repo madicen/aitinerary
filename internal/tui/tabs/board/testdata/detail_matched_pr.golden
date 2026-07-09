@@ -1,0 +1,36 @@
+╭─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ APP-101 · Widget export drops rows on large CSVs                                                                        │
+│ Status  In Progress                                                                                                     │
+│ Type    Story                                                                                                           │
+│ Priority Medium                                                                                                         │
+│ Assignee Michael Madicen                                                                                                │
+│ Labels  backend                                                                                                         │
+│ Updated 2026-06-13                                                                                                      │
+│ Hygiene merged PR stackadapt/applications#501 — should be Done; no due date; no parent epic; no active or future sprint │
+│ Matched PRs                                                                                                             │
+│   stackadapt/applications#501 (high) https://github.com/stackadapt/applications/pull/501                                │
+│ Description                                                                                                             │
+│ Export truncates after 10k rows.                                                                                        │
+│ s sprint                                                                                                                │
+│ d due —                                                                                                                 │
+│ p epic —                                                                                                                │
+│ l labels backend                                                                                                        │
+│ t transition                                                                                                            │
+│ Transitions Done → Done                                                                                                 │
+╰─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+────────────────────────────────────────────────────────────────────────────────────────────────────
+ All   Needs attention   Done candidates   APP   IRE   To Do   In flight   Done
+space select · v range · E epic · j/k nav · / search
+  ── Epic missing dates ──
+  [APP] To Do APP-110 Undated epic for timeline gutter ⬡📅
+  ── PR merged — not Done ──
+▸ [APP] In Progress APP-101 Widget export drops rows on large CSVs ⬡E ⬡S ⬡D PR✓
+  [APP] In Review APP-102 Add retry to webhook delivery PR✓
+  [IRE] To Do HELP-201 IRE: Apps dashboard timeout in prod ⬡E ⬡S PR✓
+  ── Missing due date ──
+  [APP] In Progress APP-101 Widget export drops rows on large CSVs ⬡E ⬡S ⬡D PR✓
+  [APP] In Progress APP-103 Stale ticket missing sprint and epic ⬡E ⬡S ⬡D ⏱
+  ── Missing epic ──
+  [APP] In Progress APP-101 Widget export drops rows on large CSVs ⬡E ⬡S ⬡D PR✓
+  [APP] In Progress APP-103 Stale ticket missing sprint and epic ⬡E ⬡S ⬡D ⏱
+  [IRE] To Do HELP-201 IRE: Apps dashboard timeout in prod ⬡E ⬡S PR✓
