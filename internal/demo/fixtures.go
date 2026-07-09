@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/madicen/aitinerary/internal/jira"
+	"github.com/madicen/aitinerary/internal/match"
 	"github.com/madicen/aitinerary/internal/prompts"
 )
 
@@ -69,6 +70,34 @@ func coalesce(a, b string) string {
 		return a
 	}
 	return b
+}
+
+// StatusCommentForTicket returns a deterministic sync-prep status comment stub
+// using ticket fields and any matched merged PRs (≤2 sentences).
+func StatusCommentForTicket(t jira.Ticket, matches []match.Match) string {
+	var prRefs []string
+	for _, m := range matches {
+		if m.Key != t.Key {
+			continue
+		}
+		ref := fmt.Sprintf("#%d", m.PR.Number)
+		if m.PR.Repo != "" {
+			ref = m.PR.Repo + "#" + fmt.Sprint(m.PR.Number)
+		}
+		prRefs = append(prRefs, ref)
+	}
+	if len(prRefs) > 0 {
+		return fmt.Sprintf("%s (%s): merged %s — ready to mark Done after verification.",
+			t.Key, t.Summary, strings.Join(prRefs, ", "))
+	}
+	switch strings.ToLower(t.StatusCategory) {
+	case "indeterminate":
+		return fmt.Sprintf("%s (%s): still %s; no merged PR detected this sweep.",
+			t.Key, t.Summary, t.Status)
+	default:
+		return fmt.Sprintf("%s (%s): queued as %s for sync review.",
+			t.Key, t.Summary, t.Status)
+	}
 }
 
 // WeeklyDigest returns a deterministic weekly digest markdown for demo/VHS.

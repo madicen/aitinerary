@@ -13,6 +13,7 @@ import (
 	overlay "github.com/madicen/bubble-overlay"
 
 	"github.com/madicen/aitinerary/internal/actions"
+	"github.com/madicen/aitinerary/internal/aiconfig"
 	"github.com/madicen/aitinerary/internal/config"
 	"github.com/madicen/aitinerary/internal/demo"
 	"github.com/madicen/aitinerary/internal/gh"
@@ -20,8 +21,11 @@ import (
 	"github.com/madicen/aitinerary/internal/jira"
 	"github.com/madicen/aitinerary/internal/match"
 	"github.com/madicen/aitinerary/internal/store"
+	"github.com/madicen/aitinerary/internal/tui/genmenu"
+	"github.com/madicen/aitinerary/internal/tui/data"
 	"github.com/madicen/aitinerary/internal/tui/keys"
 	"github.com/madicen/aitinerary/internal/tui/listnav"
+	"github.com/madicen/aitinerary/internal/tui/mouse"
 	"github.com/madicen/aitinerary/internal/tui/mousedouble"
 	"github.com/madicen/aitinerary/internal/tui/util"
 	"github.com/madicen/aitinerary/internal/tui/util/dropdown"
@@ -49,6 +53,7 @@ type Model struct {
 	listnav.Model
 
 	cfg   *config.Config
+	aiCfg *aiconfig.Config
 	store *store.Store
 	queue *actions.Queue
 	engine *actions.Engine
@@ -101,6 +106,15 @@ type Model struct {
 	sweepMsg   string
 	sweep      *sweepState
 
+	kanbanProjects map[string]bool
+	mergedPRs      []gh.PR
+	autoApplied    *actions.AutoApplied
+
+	syncReview *syncReviewState
+	createForm *createTicketState
+	genMenu    genmenu.State
+	genReqID   int
+
 	multiSelect map[string]bool
 	rangeAnchor int
 	epicOverlay *epicOverlayState
@@ -124,6 +138,9 @@ type searchInput struct {
 
 // SetZoneManager wires bubblezone for mouse hit-testing.
 func (m *Model) SetZoneManager(zm *zone.Manager) { m.zone = zm }
+
+// SetAIConfig wires AI profiles for genmenu generate buttons.
+func (m *Model) SetAIConfig(cfg *aiconfig.Config) { m.aiCfg = cfg }
 
 // SetEngine attaches the actions engine for ticket writes.
 func (m *Model) SetEngine(eng *actions.Engine) { m.engine = eng }
@@ -243,15 +260,22 @@ func (m *Model) rebuildChips() {
 	}
 }
 
+// SetAutoApplied wires the auto-applied tracker from the root model.
+func (m *Model) SetAutoApplied(a *actions.AutoApplied) { m.autoApplied = a }
+
 func (m *Model) loadData(mergedPRs []gh.PR) {
 	if m.store != nil {
 		m.allTickets = m.store.Tickets()
 	} else {
 		m.allTickets = demo.AllTickets()
 	}
+	if len(mergedPRs) == 0 && len(m.mergedPRs) > 0 {
+		mergedPRs = m.mergedPRs
+	}
 	if len(mergedPRs) == 0 && m.store != nil && m.store.DemoMode() {
 		mergedPRs = demo.MergedPRs()
 	}
+	m.mergedPRs = mergedPRs
 	prs := make([]match.PR, 0, len(mergedPRs))
 	for _, p := range mergedPRs {
 		prs = append(prs, p.ToMatch())
@@ -259,6 +283,7 @@ func (m *Model) loadData(mergedPRs []gh.PR) {
 	m.matches = match.MatchPRs(m.cfg.ProjectKeys(), prs, m.allTickets)
 	rules := hygiene.Rules{
 		StaleInProgressDays: m.cfg.StaleInProgressDays,
+		KanbanProjects:      m.kanbanProjects,
 		Now:                 m.now,
 	}
 	m.findings = hygiene.Scan(m.allTickets, m.matches, rules)
@@ -409,7 +434,23 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.sweepMsg = fmt.Sprintf("sweep queued %d actions", msg.Queued)
 		}
 		m.loadData(nil)
+		if len(m.commentActions()) > 0 {
+			m.openSyncReview()
+		}
 		return m, nil
+	case EpicDraftGeneratedMsg:
+		return m.handleEpicGenMenuMsg(msg)
+	case genmenu.TickMsg:
+		return m.handleEpicGenMenuMsg(msg)
+	case data.RefreshAllMsg:
+		m.kanbanProjects = msg.KanbanProjects
+		m.loadData(msg.MergedPRs)
+		if msg.Store.Err != nil {
+			m.errText = msg.Store.Err.Error()
+		}
+		if len(msg.AutoApplied) > 0 {
+			m.statusText = fmt.Sprintf("Auto-applied %d transition(s)", len(msg.AutoApplied))
+		}
 	case store.StoreRefreshedMsg:
 		m.loadData(nil)
 		if msg.Err != nil {
@@ -477,6 +518,12 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width = msg.Width
 		m.height = msg.Height
 	case tea.KeyMsg:
+		if m.syncReview != nil && m.syncReview.open {
+			return m.handleSyncReviewKey(msg)
+		}
+		if m.createForm != nil && m.createForm.open {
+			return m.handleCreateTicketKey(msg)
+		}
 		if m.epicOverlay != nil && m.epicOverlay.open {
 			return m.handleEpicOverlayKey(msg)
 		}
@@ -521,7 +568,19 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return updated, tea.Batch(cmds...)
 	case zone.MsgZoneInBounds:
 		if msg.Event.Action != tea.MouseActionRelease || msg.Event.Button != tea.MouseButtonLeft {
+			if m.epicOverlay != nil && m.epicOverlay.open {
+				if _, cmd := m.handleEpicGenMenuMouse(msg.Event); cmd != nil {
+					return m, cmd
+				}
+			}
 			return m, nil
+		}
+		if m.epicOverlay != nil && m.epicOverlay.open {
+			if zid := m.resolveEpicOverlayZone(msg); zid == mouse.ZoneBoardGenerate {
+				name := m.activeAIProfileName()
+				m.statusText = fmt.Sprintf("Regenerating epic draft (%s, one-shot)", name)
+				return m, m.regenerateEpicDraft(name)
+			}
 		}
 		zid := m.resolveClickedZone(msg)
 		if zid == "" {
@@ -531,6 +590,11 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmds = append(cmds, cmd)
 		return updated, tea.Batch(cmds...)
 	case tea.MouseMsg:
+		if m.epicOverlay != nil && m.epicOverlay.open {
+			if updated, cmd := m.handleEpicGenMenuMouse(msg); cmd != nil {
+				return updated, cmd
+			}
+		}
 		if m.search.open {
 			return m, nil
 		}
@@ -611,6 +675,13 @@ func (m *Model) handleKey(msg tea.KeyMsg) (*Model, tea.Cmd) {
 		return m, nil
 	case key.Matches(msg, m.keys.BoardCreateEpic):
 		return m, m.openEpicOverlay()
+	case key.Matches(msg, m.keys.BoardCreateTicket):
+		return m, m.openCreateTicket()
+	case key.Matches(msg, m.keys.BoardUndoAuto):
+		return m, m.undoLastAutoApplied()
+	case key.Matches(msg, m.keys.BoardSyncReview):
+		m.openSyncReview()
+		return m, nil
 	case msg.String() == "j", msg.String() == "down":
 		return m.moveSelection(1)
 	case msg.String() == "k", msg.String() == "up":
@@ -716,6 +787,10 @@ func (m *Model) View() string {
 		v = m.transitionDD.Composite(v, m.dropdownRow(), 2, m.width, m.height)
 	}
 	v = m.renderEpicOverlay(v)
+	v = m.renderEpicGenMenu(v)
+	v = m.renderCreateTicket(v)
+	v = m.renderSyncReview(v)
+	v = m.renderAutoAppliedStrip(v)
 	return v
 }
 

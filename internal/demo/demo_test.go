@@ -1,8 +1,10 @@
 package demo
 
 import (
+	"strings"
 	"testing"
 
+	"github.com/madicen/aitinerary/internal/jira"
 	"github.com/madicen/aitinerary/internal/match"
 )
 
@@ -45,6 +47,29 @@ func TestEpicDraftForTickets(t *testing.T) {
 	}
 	if draft.Body == "" {
 		t.Fatal("expected non-empty epic body")
+	}
+}
+
+func TestStatusCommentForTicket(t *testing.T) {
+	tickets := Tickets()
+	prs := make([]match.PR, len(MergedPRs()))
+	for i, p := range MergedPRs() {
+		prs[i] = p.ToMatch()
+	}
+	matches := match.MatchPRs([]string{"APP", "HELP"}, prs, tickets)
+	var app101 jira.Ticket
+	for _, tk := range tickets {
+		if tk.Key == "APP-101" {
+			app101 = tk
+			break
+		}
+	}
+	comment := StatusCommentForTicket(app101, matches)
+	if comment == "" || !strings.Contains(comment, "APP-101") {
+		t.Fatalf("unexpected comment: %q", comment)
+	}
+	if !strings.Contains(comment, "501") && !strings.Contains(comment, "merged") {
+		t.Fatalf("expected merged PR reference in comment: %q", comment)
 	}
 }
 

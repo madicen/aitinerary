@@ -3,19 +3,22 @@ package board
 import (
 	"context"
 	"fmt"
+	"sort"
+	"strings"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/madicen/aitinerary/internal/actions"
 	"github.com/madicen/aitinerary/internal/demo"
+	"github.com/madicen/aitinerary/internal/gh"
 	"github.com/madicen/aitinerary/internal/hygiene"
 	"github.com/madicen/aitinerary/internal/jira"
 	"github.com/madicen/aitinerary/internal/match"
 	"github.com/madicen/aitinerary/internal/store"
 )
 
-// SweepDoneMsg reports a completed sync-prep sweep (P9.1 stub).
+// SweepDoneMsg reports a completed sync-prep sweep (P9.1).
 type SweepDoneMsg struct {
 	Queued    int
 	Actions   []actions.Action
@@ -34,13 +37,35 @@ type sweepState struct {
 	cancel context.CancelFunc
 }
 
+type sweepInput struct {
+	store          *store.Store
+	staleDays      int
+	now            time.Time
+	mergedPRs      []gh.PR
+	kanbanProjects map[string]bool
+	projectKeys    []string
+	doneStatus     string
+}
+
 func (m *Model) startSweep() tea.Cmd {
 	if m.sweep != nil && m.sweep.active {
 		return nil
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	m.sweep = &sweepState{active: true, step: "starting", cancel: cancel}
-	return runSweepCmd(ctx, m.store, m.cfg.StaleInProgressDays, m.now)
+	doneStatus := m.cfg.DoneStatusName
+	if doneStatus == "" {
+		doneStatus = "Done"
+	}
+	return runSweepCmd(ctx, sweepInput{
+		store:          m.store,
+		staleDays:      m.cfg.StaleInProgressDays,
+		now:            m.now,
+		mergedPRs:      m.mergedPRs,
+		kanbanProjects: m.kanbanProjects,
+		projectKeys:    m.cfg.ProjectKeys(),
+		doneStatus:     doneStatus,
+	})
 }
 
 func (m *Model) cancelSweep() tea.Cmd {
@@ -52,64 +77,92 @@ func (m *Model) cancelSweep() tea.Cmd {
 	return nil
 }
 
-func runSweepCmd(ctx context.Context, st *store.Store, staleDays int, now time.Time) tea.Cmd {
+func runSweepCmd(ctx context.Context, in sweepInput) tea.Cmd {
 	return func() tea.Msg {
-		tickets := demo.AllTickets()
+		tickets := loadSweepTickets(in.store)
+		var matches []match.Match
+		var findings []hygiene.Finding
+
 		steps := []struct {
 			name string
-			run  func([]jira.Ticket) ([]jira.Ticket, []actions.Action, error)
+			run  func([]jira.Ticket) ([]jira.Ticket, error)
 		}{
-			{"refresh tickets", func(cur []jira.Ticket) ([]jira.Ticket, []actions.Action, error) {
-				if st != nil {
-					if msg, ok := st.RefreshCmd()().(store.StoreRefreshedMsg); ok {
+			{"refresh tickets", func(cur []jira.Ticket) ([]jira.Ticket, error) {
+				if in.store != nil {
+					if msg, ok := in.store.RefreshCmd()().(store.StoreRefreshedMsg); ok {
 						if msg.Err != nil {
-							return cur, nil, msg.Err
+							return cur, msg.Err
 						}
-						return st.Tickets(), nil, nil
+						return loadSweepTickets(in.store), nil
 					}
 				}
-				return cur, nil, nil
+				return cur, nil
 			}},
-			{"match merged PRs", func(cur []jira.Ticket) ([]jira.Ticket, []actions.Action, error) {
-				_ = matchPRsForTickets(cur)
-				return cur, nil, nil
+			{"match merged PRs", func(cur []jira.Ticket) ([]jira.Ticket, error) {
+				matches = matchPRsForTickets(cur, in.mergedPRs, in.projectKeys)
+				return cur, nil
 			}},
-			{"hygiene scan", func(cur []jira.Ticket) ([]jira.Ticket, []actions.Action, error) {
-				rules := hygiene.Rules{StaleInProgressDays: staleDays, Now: now}
-				_ = hygiene.Scan(cur, matchPRsForTickets(cur), rules)
-				return cur, nil, nil
+			{"hygiene scan", func(cur []jira.Ticket) ([]jira.Ticket, error) {
+				rules := hygiene.Rules{
+					StaleInProgressDays: in.staleDays,
+					KanbanProjects:      in.kanbanProjects,
+					Now:                 in.now,
+				}
+				findings = hygiene.Scan(cur, matches, rules)
+				return cur, nil
 			}},
-			{"draft status comments", func(cur []jira.Ticket) ([]jira.Ticket, []actions.Action, error) {
-				return cur, stubSweepActions(cur), nil
+			{"draft status comments", func(cur []jira.Ticket) ([]jira.Ticket, error) {
+				return cur, nil
 			}},
 		}
 
-		var queued []actions.Action
 		for _, step := range steps {
 			select {
 			case <-ctx.Done():
 				return SweepDoneMsg{Cancelled: true}
 			default:
 			}
-			next, acts, err := step.run(tickets)
+			next, err := step.run(tickets)
 			if err != nil {
-				return SweepDoneMsg{Queued: len(queued), Actions: queued, Err: err}
+				return SweepDoneMsg{Err: err}
 			}
 			tickets = next
-			queued = append(queued, acts...)
 		}
+
+		queued := buildSweepActions(tickets, matches, findings, in.doneStatus, in.now)
 		return SweepDoneMsg{Queued: len(queued), Actions: queued}
 	}
 }
 
-func matchPRsForTickets(tickets []jira.Ticket) []match.Match {
-	prs := demo.MergedPRs()
-	matchPRs := make([]match.PR, 0, len(prs))
-	for _, p := range prs {
+func loadSweepTickets(st *store.Store) []jira.Ticket {
+	if st != nil {
+		if t := st.Tickets(); len(t) > 0 {
+			return t
+		}
+		if st.DemoMode() {
+			return demo.AllTickets()
+		}
+	}
+	return demo.AllTickets()
+}
+
+func matchPRsForTickets(tickets []jira.Ticket, mergedPRs []gh.PR, projectKeys []string) []match.Match {
+	if len(mergedPRs) == 0 {
+		mergedPRs = demo.MergedPRs()
+	}
+	if len(projectKeys) == 0 {
+		projectKeys = projectKeysFromTickets(tickets)
+	}
+	matchPRs := make([]match.PR, 0, len(mergedPRs))
+	for _, p := range mergedPRs {
 		matchPRs = append(matchPRs, p.ToMatch())
 	}
-	keys := make([]string, 0, len(tickets))
+	return match.MatchPRs(projectKeys, matchPRs, tickets)
+}
+
+func projectKeysFromTickets(tickets []jira.Ticket) []string {
 	seen := map[string]bool{}
+	var keys []string
 	for _, t := range tickets {
 		if i := indexOfDash(t.Key); i > 0 {
 			pk := t.Key[:i]
@@ -119,7 +172,7 @@ func matchPRsForTickets(tickets []jira.Ticket) []match.Match {
 			}
 		}
 	}
-	return match.MatchPRs(keys, matchPRs, tickets)
+	return keys
 }
 
 func indexOfDash(s string) int {
@@ -131,11 +184,18 @@ func indexOfDash(s string) int {
 	return -1
 }
 
-func stubSweepActions(tickets []jira.Ticket) []actions.Action {
-	now := time.Now()
+func buildSweepActions(tickets []jira.Ticket, matches []match.Match, findings []hygiene.Finding, doneStatus string, now time.Time) []actions.Action {
+	if now.IsZero() {
+		now = time.Now()
+	}
+	matchByKey := indexMatchesByKey(matches)
 	var out []actions.Action
+
 	for _, t := range tickets {
-		if t.IsDone() {
+		if t.IsDone() || strings.EqualFold(t.Type, "Epic") {
+			continue
+		}
+		if !sweepCommentEligible(t, matchByKey[t.Key]) {
 			continue
 		}
 		out = append(out, actions.Action{
@@ -143,12 +203,120 @@ func stubSweepActions(tickets []jira.Ticket) []actions.Action {
 			Kind:      actions.KindAddComment,
 			TicketKey: t.Key,
 			Source:    actions.SourceAI,
-			Summary:   "AI status update",
-			Comment:   fmt.Sprintf("%s: progress update from sync-prep stub.", t.Key),
+			Summary:   t.Key + ": AI status update",
+			Comment:   demo.StatusCommentForTicket(t, matches),
+		})
+		now = now.Add(time.Nanosecond)
+	}
+
+	for _, f := range findings {
+		if f.Type != hygiene.MergedNotDone || !f.AutoFixable {
+			continue
+		}
+		prRef := ""
+		if f.PR != nil {
+			prRef = f.PR.Repo + "#" + fmtInt(f.PR.Number)
+		}
+		out = append(out, actions.Action{
+			ID:         actions.NewID(actions.KindTransition, now),
+			Kind:       actions.KindTransition,
+			TicketKey:  f.TicketKey,
+			Source:     actions.SourceAI,
+			Confidence: actions.ConfHigh,
+			ToStatus:   doneStatus,
+			PRRef:      prRef,
+			Summary:    f.TicketKey + " → " + doneStatus + " (merged PR)",
+		})
+		now = now.Add(time.Nanosecond)
+	}
+
+	ordered := sweepRankOrder(tickets)
+	for i := 0; i < len(ordered)-1; i++ {
+		out = append(out, actions.Action{
+			ID:         actions.NewID(actions.KindRank, now),
+			Kind:       actions.KindRank,
+			TicketKey:  ordered[i].Key,
+			Source:     actions.SourceAI,
+			RankBefore: ordered[i+1].Key,
+			Summary:    fmt.Sprintf("%s: rank above %s", ordered[i].Key, ordered[i+1].Key),
 		})
 		now = now.Add(time.Nanosecond)
 	}
 	return out
+}
+
+func sweepCommentEligible(t jira.Ticket, hasMatch bool) bool {
+	if hasMatch {
+		return true
+	}
+	switch t.StatusCategory {
+	case "indeterminate", "new":
+		return true
+	default:
+		return false
+	}
+}
+
+func indexMatchesByKey(matches []match.Match) map[string]bool {
+	out := make(map[string]bool, len(matches))
+	for _, m := range matches {
+		out[m.Key] = true
+	}
+	return out
+}
+
+func sweepRankOrder(tickets []jira.Ticket) []jira.Ticket {
+	var candidates []jira.Ticket
+	for _, t := range tickets {
+		if t.IsDone() || strings.EqualFold(t.Type, "Epic") {
+			continue
+		}
+		candidates = append(candidates, t)
+	}
+	sort.SliceStable(candidates, func(i, j int) bool {
+		pi, pj := sweepRankPriority(candidates[i]), sweepRankPriority(candidates[j])
+		if pi != pj {
+			return pi < pj
+		}
+		if pi == 3 {
+			di, dj := candidates[i].DueDate, candidates[j].DueDate
+			if di != "" && dj != "" && di != dj {
+				return di < dj
+			}
+			if di != "" && dj == "" {
+				return true
+			}
+			if di == "" && dj != "" {
+				return false
+			}
+		}
+		return candidates[i].Key < candidates[j].Key
+	})
+	return candidates
+}
+
+func sweepRankPriority(t jira.Ticket) int {
+	if strings.Contains(strings.ToLower(t.Status), "block") {
+		return 2
+	}
+	if t.StatusCategory == "indeterminate" {
+		return 1
+	}
+	return 3
+}
+
+func fmtInt(n int) string {
+	if n == 0 {
+		return "0"
+	}
+	var b [20]byte
+	i := len(b)
+	for n > 0 {
+		i--
+		b[i] = byte('0' + n%10)
+		n /= 10
+	}
+	return string(b[i:])
 }
 
 // renderSweepOverlay draws the cancellable progress overlay.

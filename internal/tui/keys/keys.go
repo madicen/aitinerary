@@ -32,7 +32,7 @@ type Map struct {
 	ListOpen        key.Binding // enter
 	BoardSyncPrep   key.Binding // S — sync-prep sweep
 	BoardFilterAll            key.Binding // 0
-	BoardFilterNeedsAttention key.Binding // n
+	BoardFilterNeedsAttention key.Binding // N
 	BoardFilterDoneCandidates key.Binding // m
 	BoardEditSprint           key.Binding // s
 	BoardEditDueDate          key.Binding // d
@@ -44,6 +44,9 @@ type Map struct {
 	BoardMultiSelect          key.Binding // space
 	BoardRangeSelect          key.Binding // v
 	BoardCreateEpic           key.Binding // E
+	BoardCreateTicket         key.Binding // n — IRE quick capture
+	BoardUndoAuto             key.Binding // z — undo last auto-applied
+	BoardSyncReview           key.Binding // R — open sync-prep review
 
 	// Help tab.
 	HelpSetupWizard key.Binding // w
@@ -56,8 +59,12 @@ type Map struct {
 	QueueBulkApprove key.Binding // A
 
 	// Epics tab.
-	EpicsNav        key.Binding // j/k, ↑/↓
+	EpicsNav            key.Binding // j/k, ↑/↓
 	EpicsTimelineScroll key.Binding // h/l
+	EpicsEditStartDate  key.Binding // s
+	EpicsEditDueDate    key.Binding // d
+	EpicsAssign         key.Binding // a
+	EpicsMultiSelect    key.Binding // space
 }
 
 // Default returns the built-in keymap for aitinerary (PLAN P2.1).
@@ -89,7 +96,7 @@ func Default() Map {
 		ListOpen:      b("enter", "open", "enter"),
 		BoardSyncPrep: b("S", "sync-prep sweep", "S"),
 		BoardFilterAll:            b("0", "all tickets", "0"),
-		BoardFilterNeedsAttention: b("n", "needs attention", "n"),
+		BoardFilterNeedsAttention: b("N", "needs attention", "N"),
 		BoardFilterDoneCandidates: b("m", "done candidates", "m"),
 		BoardEditSprint:           b("s", "sprint", "s"),
 		BoardEditDueDate:          b("d", "due date", "d"),
@@ -101,6 +108,9 @@ func Default() Map {
 		BoardMultiSelect:          b("space", "toggle multi-select", " "),
 		BoardRangeSelect:          b("v", "range select", "v"),
 		BoardCreateEpic:           b("E", "create epic from selection", "E"),
+		BoardCreateTicket:         b("n", "IRE quick capture", "n"),
+		BoardUndoAuto:             b("z", "undo auto-applied", "z"),
+		BoardSyncReview:           b("R", "sync-prep review", "R"),
 
 		HelpSetupWizard: b("w", "setup wizard", "w"),
 
@@ -112,6 +122,10 @@ func Default() Map {
 
 		EpicsNav:            disp("j/k ↑/↓", "nav"),
 		EpicsTimelineScroll: disp("h/l", "timeline scroll"),
+		EpicsEditStartDate:  b("s", "start date", "s"),
+		EpicsEditDueDate:    b("d", "due date", "d"),
+		EpicsAssign:         b("a", "assign tickets", "a"),
+		EpicsMultiSelect:    b("space", "toggle ticket", " "),
 	}
 }
 
@@ -145,12 +159,14 @@ func (m Map) Sections() []Section {
 			m.BoardEditSprint, m.BoardEditDueDate, m.BoardEditParent,
 			m.BoardEditLabels, m.BoardEditTransition, m.BoardOpenBrowser, m.BoardCopyKey,
 			m.BoardMultiSelect, m.BoardRangeSelect, m.BoardCreateEpic,
+			m.BoardCreateTicket, m.BoardUndoAuto, m.BoardSyncReview,
 		}},
 		{Title: "Queue", Bindings: []key.Binding{
 			m.QueueNav, m.QueueApprove, m.QueueEdit, m.QueueReject, m.QueueBulkApprove,
 		}},
 		{Title: "Epics", Bindings: []key.Binding{
 			m.EpicsNav, m.EpicsTimelineScroll,
+			m.EpicsEditStartDate, m.EpicsEditDueDate, m.EpicsAssign, m.EpicsMultiSelect, m.ListOpen,
 		}},
 		{Title: "Help", Bindings: []key.Binding{
 			m.HelpSetupWizard,
